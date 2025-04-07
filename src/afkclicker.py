@@ -289,14 +289,5 @@ class AfkClicker:
         win32gui.EnumWindows(callback, hwnds)
         self.pid = hwnds[0] if hwnds else -1
 
-    @staticmethod
-    def get_process_path(pid):
-        try:
-            h_process = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, pid)
-            exe_path = win32process.GetModuleFileNameEx(h_process, 0)
-            return Path(exe_path)
-        except Exception as e:
-            return None
-
     def close_clicker(self):
         self.stop_event.set()
