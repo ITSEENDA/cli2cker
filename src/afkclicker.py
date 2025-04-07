@@ -197,6 +197,20 @@ class AfkClicker:
         filename = 'saved_path.txt'
         file_path = os.path.join(current_dir, filename)
         with open(file_path, 'w') as f:
+            tokens = args.split()
+            if len(tokens) > 1:
+                sub_cmd = tokens.pop(0)
+                sub_args = tokens.pop(0)
+                if sub_cmd and sub_cmd.strip() == 'default':
+                    appdata_path = os.environ.get('APPDATA')
+                    match sub_args:
+                        case 'tlauncher':
+                            minecraft_path = '.minecraft\\runtime\\java-runtime-gamma\\windows\\java-runtime-gamma' \
+                                             '\\bin\\javaw.exe'
+                            f.write(os.path.join(appdata_path, minecraft_path))
+                        case _:
+                            return
+                return
             f.write(args.replace('"', ''))
         print(f"Saved path to {filename}")
 
@@ -247,7 +261,7 @@ class AfkClicker:
                         case _:
                             pass
         except Exception as e:
-            print(e)
+            print(f"{RED}An An error occurred: {e}{RESET}")
         sleep(1)
 
     @staticmethod
@@ -285,5 +299,4 @@ class AfkClicker:
             return None
 
     def close_clicker(self):
-        print(self.get_process_path(40196))
         self.stop_event.set()
