@@ -10,9 +10,8 @@ from time import sleep
 from argparse import ArgumentParser
 import threading
 import queue
-from pathlib import Path
 
-from src.utils import RED, RESET, get_key, GREEN
+from utils import RED, RESET, get_key, GREEN
 
 
 class AfkClicker:

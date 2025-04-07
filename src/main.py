@@ -1,6 +1,6 @@
 from sys import argv, exit
 
-from src.afkclicker import AfkClicker
+from afkclicker import AfkClicker
 
 
 def main():
