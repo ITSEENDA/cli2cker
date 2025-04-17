@@ -1,2 +1,4 @@
-pypiwin32~=223
-pywin32~=310
+pypiwin32>=223
+pywin32>=310
+pynput>=1.8.1
+prompt_toolkit>=3.0.51
