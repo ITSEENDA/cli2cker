@@ -10,6 +10,16 @@ class CommandCompleter(Completer):
     def update_commands(self, commands):
         self.commands = commands or {}
 
+    def update_candidates(self, command, candidates):
+        spec = self.commands.get(command)
+        if isinstance(spec, list):
+            self.commands[command] = list(dict.fromkeys([*spec, *candidates]))
+
+    def update_subcommand_candidates(self, command, subcommand, candidates):
+        spec = self.commands.get(command)
+        if isinstance(spec, dict) and subcommand in spec:
+            spec[subcommand] = list(dict.fromkeys([*spec[subcommand], *candidates]))
+
     @staticmethod
     def _completion(text, candidate):
         if candidate.startswith(text):

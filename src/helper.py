@@ -122,3 +122,22 @@ class ClickerHelper:
     def print_helper(self, file=None):
         """Backward-compatible alias for print_help."""
         self.print_help(file=file)
+
+    @staticmethod
+    def format_table(headers, rows):
+        headers = [str(header) for header in headers]
+        rows = [[str(value) for value in row] for row in rows]
+        widths = [len(header) for header in headers]
+        for row in rows:
+            widths = [
+                max(width, len(value))
+                for width, value in zip(widths, row)
+            ]
+
+        def format_row(row):
+            return '  '.join(value.ljust(width) for value, width in zip(row, widths)).rstrip()
+
+        lines = [format_row(headers)]
+        lines.append('  '.join('-' * width for width in widths).rstrip())
+        lines.extend(format_row(row) for row in rows)
+        return '\n'.join(lines)

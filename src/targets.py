@@ -12,6 +12,12 @@ class TargetRegistry:
     def list(self):
         return self.storage.load_paths()
 
+    def show(self, name):
+        paths = self.storage.load_paths()
+        if name not in paths:
+            raise KeyError(f'No saved target named {name!r}')
+        return paths[name]
+
     def save(self, name, raw_path, base_dir=None, validate=True):
         path = Path(os.path.expandvars(os.path.expanduser(raw_path)))
         if not path.is_absolute():

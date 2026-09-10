@@ -11,12 +11,15 @@ python src/main.py
 ## Commands
 
 ```text
-!path save -n mc -p "..\\Minecraft\\javaw.exe"
-!start -n mc
+!profile create mc --path "..\\Minecraft\\javaw.exe"
+!profile list
+!start mc
 !toggle -n mc
 !status
-!stop -n mc
+!stop mc
 ```
+
+`!path` is kept as a compatibility alias for older profiles.
 
 Relative target paths are resolved once when saved and stored as absolute paths.
 Runtime task state is kept in memory; target profiles and hotkeys are persisted
