@@ -43,6 +43,8 @@ class HotkeyManager:
         self.action_thread = None
         self.action_queue = Queue()
         self.last_event_at = monotonic()
+        self.capture_lock = threading.Lock()
+        self.capture_active = threading.Event()
 
     @staticmethod
     def _build_lookup(bindings):
@@ -83,7 +85,7 @@ class HotkeyManager:
         while not self.stop_event.wait(0.1):
             try:
                 self._synchronize_pressed_keys()
-                if self.listener is not None and not self.listener.is_alive():
+                if not self.capture_active.is_set() and self.listener is not None and not self.listener.is_alive():
                     self._restart_listener()
             except Exception as exc:
                 print(f'[hotkey] recovery failed: {exc}')
@@ -166,31 +168,48 @@ class HotkeyManager:
         self.storage.save_hotkeys(self.bindings)
 
     def capture_binding(self, name, action):
-        print('Press the hotkey combination, then release it.')
-        captured = set()
-        assigned = threading.Event()
+        with self.capture_lock:
+            print('Press the hotkey combination, then release it.')
+            captured = set()
+            assigned = threading.Event()
+            self.capture_active.set()
+            listener = self.listener
+            if listener is not None:
+                listener.stop()
+                listener.join(timeout=1)
 
-        def on_press(key):
-            normalized = normalize_key(key)
-            if normalized:
-                captured.add(normalized)
+            def on_press(key):
+                normalized = normalize_key(key)
+                if normalized:
+                    captured.add(normalized)
 
-        def on_release(key):
-            if captured:
-                assigned.set()
-                return False
+            def on_release(key):
+                if captured:
+                    assigned.set()
+                    return False
 
-        with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
-            listener.join()
-        if not assigned.is_set() or not captured:
-            raise RuntimeError('No hotkey was captured')
-        self.save_binding(name, captured, action)
-        return captured
+            try:
+                with keyboard.Listener(on_press=on_press, on_release=on_release) as capture_listener:
+                    capture_listener.join()
+            finally:
+                self.capture_active.clear()
+                with self.state_lock:
+                    self.pressed_keys.clear()
+                    self.key_triggered = False
+                if not self.stop_event.is_set():
+                    self._restart_listener()
+
+            if not assigned.is_set() or not captured:
+                raise RuntimeError('No hotkey was captured')
+            self.save_binding(name, captured, action)
+            return captured
 
     def update_action(self, name, action):
         if name not in self.bindings:
             raise KeyError(f'Unknown hotkey: {name}')
         self.bindings[name]['action'] = action
+        keys = frozenset(self.bindings[name].get('keys', ()))
+        self.lookup[keys] = action
         self.storage.save_hotkeys(self.bindings)
 
     def delete_binding(self, name):

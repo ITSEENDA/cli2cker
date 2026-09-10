@@ -2,6 +2,7 @@ import os
 
 from prompt_toolkit import prompt
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.history import FileHistory
 
 try:
     from prompt_toolkit.output.win32 import NoConsoleScreenBufferError
@@ -16,8 +17,10 @@ GREEN = '\033[32m'
 RESET = '\033[0m'
 
 
-def safe_prompt(prompt_text, completer=None):
+def safe_prompt(prompt_text, completer=None, session=None):
     try:
+        if session is not None:
+            return session.prompt(prompt_text).strip()
         return prompt(
             prompt_text,
             completer=completer,
@@ -25,6 +28,19 @@ def safe_prompt(prompt_text, completer=None):
         ).strip()
     except NoConsoleScreenBufferError:
         return input(prompt_text).strip()
+
+
+def create_prompt_session(history_path, completer=None):
+    from prompt_toolkit import PromptSession
+
+    try:
+        return PromptSession(
+            history=FileHistory(str(history_path)),
+            completer=completer,
+            auto_suggest=AutoSuggestFromHistory(),
+        )
+    except NoConsoleScreenBufferError:
+        return None
 
 
 def clear_terminal():

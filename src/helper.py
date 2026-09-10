@@ -9,6 +9,10 @@ class CommandSpec:
     usage: str = ''
     options: tuple[str, ...] = ()
     subcommands: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    arguments: tuple[str, ...] = ()
+    subcommand_arguments: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    argument_descriptions: dict[str, str] = field(default_factory=dict)
+    subcommand_argument_descriptions: dict[str, dict[str, str]] = field(default_factory=dict)
     option_descriptions: dict[str, str] = field(default_factory=dict)
     option_examples: dict[str, str] = field(default_factory=dict)
     subcommand_descriptions: dict[str, str] = field(default_factory=dict)
@@ -44,6 +48,10 @@ class ClickerHelper:
             options=None,
             subcommands=None,
             usage='',
+            arguments=None,
+            subcommand_arguments=None,
+            argument_descriptions=None,
+            subcommand_argument_descriptions=None,
             option_descriptions=None,
             option_examples=None,
             subcommand_descriptions=None,
@@ -60,6 +68,13 @@ class ClickerHelper:
             usage=usage,
             options=self._as_options(options),
             subcommands=normalized_subcommands,
+            arguments=self._as_options(arguments),
+            subcommand_arguments={
+                str(subcommand): self._as_options(arguments)
+                for subcommand, arguments in (subcommand_arguments or {}).items()
+            },
+            argument_descriptions=argument_descriptions or {},
+            subcommand_argument_descriptions=subcommand_argument_descriptions or {},
             option_descriptions=option_descriptions or {},
             option_examples=option_examples or {},
             subcommand_descriptions=subcommand_descriptions or {},
@@ -123,12 +138,26 @@ class ClickerHelper:
                     if example:
                         suffix += f' (example: {example})'
                     lines.append(f'  {option}{suffix}')
+            if spec.arguments:
+                lines.append('Arguments:')
+                for argument in spec.arguments:
+                    description = spec.argument_descriptions.get(argument, '')
+                    suffix = f' - {description}' if description else ''
+                    lines.append(f'  {argument}{suffix}')
             if spec.subcommands:
                 if subcommand and subcommand in spec.subcommands:
                     options = spec.subcommands[subcommand]
                     description = spec.subcommand_descriptions.get(subcommand, '')
                     if description:
                         lines.append(f'Subcommand: {subcommand} - {description}')
+                    arguments = spec.subcommand_arguments.get(subcommand, ())
+                    if arguments:
+                        lines.append('Arguments:')
+                        descriptions = spec.subcommand_argument_descriptions.get(subcommand, {})
+                        for argument in arguments:
+                            argument_description = descriptions.get(argument, '')
+                            suffix = f' - {argument_description}' if argument_description else ''
+                            lines.append(f'  {argument}{suffix}')
                     if options:
                         lines.append('Parameters:')
                         descriptions = spec.subcommand_option_descriptions.get(subcommand, {})

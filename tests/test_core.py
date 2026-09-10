@@ -192,6 +192,31 @@ class CoreTests(unittest.TestCase):
             finally:
                 app.close()
 
+    def test_hotkey_edit_updates_action_and_keys_without_capture(self):
+        app = AfkClicker(
+            storage=JsonStorage(Path(tempfile.mkdtemp()) / 'data'),
+            backend=FakeBackend(),
+        )
+        try:
+            app.router.dispatch(
+                '!hotkey create toggle-mc --keys alt+` '
+                '--action "!task toggle mc"'
+            )
+            names = [
+                item.text
+                for item in app.completer.get_completions(
+                    Document('!hotkey edit '), None
+                )
+            ]
+            self.assertIn('toggle-mc', names)
+            app.router.dispatch('!hotkey edit toggle-mc --action noop')
+            app.router.dispatch('!hotkey edit toggle-mc --keys shift+tab')
+            binding = app.hotkeys.bindings['toggle-mc']
+            self.assertEqual(binding['action'], 'noop')
+            self.assertEqual(binding['keys'], ['shift', 'tab'])
+        finally:
+            app.close()
+
 
 if __name__ == '__main__':
     unittest.main()

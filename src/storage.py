@@ -14,6 +14,7 @@ class JsonStorage:
         self.defaults_path = self.data_dir / 'defaults.json'
         self.paths_path = self.data_dir / 'paths.json'
         self.hotkeys_path = self.data_dir / 'hotkeys.json'
+        self.history_path = self.data_dir / 'history.txt'
 
     @staticmethod
     def default_data_dir():

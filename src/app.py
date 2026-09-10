@@ -10,7 +10,16 @@ from models import ClickerSettings, click_mode_name
 from storage import JsonStorage
 from targets import TargetRegistry
 from task_manager import TaskManager
-from utils import GREEN, RED, RESET, YELLOW, clear_terminal, safe_prompt, str_to_bool
+from utils import (
+    GREEN,
+    RED,
+    RESET,
+    YELLOW,
+    clear_terminal,
+    create_prompt_session,
+    safe_prompt,
+    str_to_bool,
+)
 
 
 class AfkClicker:
@@ -36,11 +45,16 @@ class AfkClicker:
         self._register_commands()
         self.completer = CommandCompleter(self.helper.completion_map)
         self._refresh_profile_completions()
+        self.prompt_session = create_prompt_session(
+            self.storage.history_path,
+            completer=self.completer,
+        )
         self.hotkeys = HotkeyManager(
             self.storage,
             self._handle_hotkey_action,
             self.backend.is_key_pressed,
         )
+        self._refresh_hotkey_completions()
 
     def _register_commands(self):
         self.router.register(
@@ -56,6 +70,24 @@ class AfkClicker:
                 'stop': ['--pid', '--profile', 'all'],
                 'status': [],
                 'list': [],
+            },
+            subcommand_arguments={
+                'start': ['<target>'],
+                'pause': ['<target>'],
+                'resume': ['<target>'],
+                'toggle': ['<target>'],
+                'config': ['<target>'],
+                'reset': ['<target>'],
+                'stop': ['<target>'],
+            },
+            subcommand_argument_descriptions={
+                'start': {'<target>': 'Profile name, or a numeric PID.'},
+                'pause': {'<target>': 'Profile name, or a numeric PID.'},
+                'resume': {'<target>': 'Profile name, or a numeric PID.'},
+                'toggle': {'<target>': 'Profile name, or a numeric PID.'},
+                'config': {'<target>': 'Running task profile name, or PID.'},
+                'reset': {'<target>': 'Running task profile name, or PID.'},
+                'stop': {'<target>': 'Profile name, or a numeric PID.'},
             },
             usage='!task <start|pause|resume|toggle|config|reset|stop|status> ...',
             subcommand_descriptions={
@@ -122,6 +154,18 @@ class AfkClicker:
                 'edit': ['--path'],
                 'delete': [],
             },
+            subcommand_arguments={
+                'create': ['<name>'],
+                'show': ['<name>'],
+                'edit': ['<name>'],
+                'delete': ['<name>'],
+            },
+            subcommand_argument_descriptions={
+                'create': {'<name>': 'Unique profile alias.'},
+                'show': {'<name>': 'Profile alias to inspect.'},
+                'edit': {'<name>': 'Profile alias to update.'},
+                'delete': {'<name>': 'Profile alias to delete.'},
+            },
             usage='!profile <create|list|show|edit|delete> ...',
             subcommand_descriptions={
                 'create': 'Create a saved executable profile.',
@@ -161,6 +205,16 @@ class AfkClicker:
                 'create': ['--keys', '--action'],
                 'edit': ['--keys', '--action', 'rb'],
                 'delete': [],
+            },
+            subcommand_arguments={
+                'create': ['<name>'],
+                'edit': ['<name>'],
+                'delete': ['<name>'],
+            },
+            subcommand_argument_descriptions={
+                'create': {'<name>': 'Unique hotkey alias.'},
+                'edit': {'<name>': 'Hotkey alias to update.'},
+                'delete': {'<name>': 'Hotkey alias to delete.'},
             },
             usage='!hotkey <list|create|edit|delete> ...',
             subcommand_descriptions={
@@ -211,10 +265,10 @@ class AfkClicker:
         profiles = list(self.targets.list())
         task_subcommands = ('start', 'pause', 'resume', 'toggle', 'config', 'reset', 'stop')
         for subcommand in task_subcommands:
-            self.completer.update_subcommand_candidates('!task', subcommand, profiles)
+            self.completer.update_argument_candidates('!task', subcommand, profiles)
             self.completer.update_value_candidates('!task', subcommand, '--profile', profiles)
         for subcommand in ('show', 'edit', 'delete'):
-            self.completer.update_subcommand_candidates('!profile', subcommand, profiles)
+            self.completer.update_argument_candidates('!profile', subcommand, profiles)
         self.completer.update_value_candidates(
             '!task', 'config', '--mode',
             ['off', 'left', 'right', 'left-right', 'right-left'],
@@ -224,6 +278,23 @@ class AfkClicker:
         )
         self.completer.update_value_candidates(
             '!task', 'config', '--key', ['none', 'space', 'enter', 'tab']
+        )
+
+    def _refresh_hotkey_completions(self):
+        names = list(self.hotkeys.bindings)
+        for subcommand in ('edit', 'delete'):
+            self.completer.update_argument_candidates('!hotkey', subcommand, names)
+        self.completer.update_value_candidates(
+            '!hotkey', 'create', '--keys', ['alt+`', 'shift+tab']
+        )
+        self.completer.update_value_candidates(
+            '!hotkey', 'edit', '--keys', ['alt+`', 'shift+tab']
+        )
+        self.completer.update_value_candidates(
+            '!hotkey', 'create', '--action', ['"!task toggle mc"', '"!task pause mc"']
+        )
+        self.completer.update_value_candidates(
+            '!hotkey', 'edit', '--action', ['"!task toggle mc"', '"!task pause mc"']
         )
 
     def _handle_hotkey_action(self, action):
@@ -539,6 +610,7 @@ class AfkClicker:
                 self.hotkeys.save_binding(name, keys, command)
             else:
                 keys = self.hotkeys.capture_binding(name, command)
+            self._refresh_hotkey_completions()
             print(f"{GREEN}[SAVED] {'+'.join(sorted(keys))}{RESET}")
             return
         if action in {'mod', 'edit'}:
@@ -566,6 +638,7 @@ class AfkClicker:
             if not name:
                 raise ValueError('Missing hotkey name')
             if self.hotkeys.delete_binding(name):
+                self._refresh_hotkey_completions()
                 print(f'{GREEN}[DELETED] {name}{RESET}')
             return
         raise ValueError(f'Unknown hotkey action: {action}')
@@ -590,7 +663,7 @@ class AfkClicker:
         self.hotkeys.start()
         try:
             while not self.tasks.global_stop.is_set():
-                line = safe_prompt('>> ', completer=self.completer)
+                line = safe_prompt('>> ', session=self.prompt_session)
                 result = self.router.dispatch(line)
                 if isinstance(result, str):
                     print(result)

@@ -7,6 +7,7 @@ class CommandCompleter(Completer):
     def __init__(self, commands=None):
         self.commands = commands or {}
         self.value_candidates = {}
+        self.argument_candidates = {}
 
     def update_commands(self, commands):
         self.commands = commands or {}
@@ -23,6 +24,9 @@ class CommandCompleter(Completer):
 
     def update_value_candidates(self, command, subcommand, option, candidates):
         self.value_candidates[(command, subcommand, option)] = list(candidates or ())
+
+    def update_argument_candidates(self, command, subcommand, candidates):
+        self.argument_candidates[(command, subcommand)] = list(candidates or ())
 
     @staticmethod
     def _completion(text, candidate):
@@ -77,6 +81,24 @@ class CommandCompleter(Completer):
             candidates = spec
             option_tokens = tokens[1:]
             value_key = (command, None)
+
+        argument_candidates = self.argument_candidates.get(value_key, ())
+        if argument_candidates:
+            if not option_tokens:
+                yield from self._yield_candidates(argument_candidates, '', set())
+                yield from self._yield_candidates(candidates, '', set())
+                return
+            if (
+                    not trailing_space
+                    and len(option_tokens) == 1
+                    and not option_tokens[0].startswith('-')
+            ):
+                yield from self._yield_candidates(
+                    argument_candidates,
+                    option_tokens[0],
+                    set(),
+                )
+                return
 
         if option_tokens:
             if not trailing_space and len(option_tokens) >= 2:
