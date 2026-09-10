@@ -13,13 +13,19 @@ python src/main.py
 ```text
 !profile create mc --path "..\\Minecraft\\javaw.exe"
 !profile list
-!start mc
-!toggle -n mc
-!status
-!stop mc
-```
+!pwd
+!cd ..\\Minecraft
+!ls
+!task start mc
+!task toggle mc
+!task config mc --mode right-left --delay 0.5 --key space --safety strict
+!task reset mc
+!task status
+!task stop mc
 
-`!path` is kept as a compatibility alias for older profiles.
+!hotkey create toggle-mc --keys alt+` --action "!task toggle mc"
+!hotkey list
+```
 
 Relative target paths are resolved once when saved and stored as absolute paths.
 Runtime task state is kept in memory; target profiles and hotkeys are persisted

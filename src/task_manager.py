@@ -95,12 +95,32 @@ class TaskManager:
                 task.state = TaskState.PAUSED
             return task
 
+    def pause(self, pid):
+        with self.lock:
+            task = self.tasks[pid]
+            if task.state == TaskState.RUNNING:
+                task.state = TaskState.PAUSED
+            return task
+
+    def resume(self, pid):
+        with self.lock:
+            task = self.tasks[pid]
+            if task.state == TaskState.PAUSED:
+                task.state = TaskState.RUNNING
+            return task
+
     def update_settings(self, pid, **values):
         with self.lock:
             task = self.tasks[pid]
             for key, value in values.items():
                 if hasattr(task.settings, key):
                     setattr(task.settings, key, value)
+            return task
+
+    def reset_settings(self, pid, defaults):
+        with self.lock:
+            task = self.tasks[pid]
+            task.settings = defaults.copy()
             return task
 
     def status(self):

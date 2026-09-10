@@ -9,6 +9,11 @@ class CommandSpec:
     usage: str = ''
     options: tuple[str, ...] = ()
     subcommands: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    option_descriptions: dict[str, str] = field(default_factory=dict)
+    option_examples: dict[str, str] = field(default_factory=dict)
+    subcommand_descriptions: dict[str, str] = field(default_factory=dict)
+    subcommand_option_descriptions: dict[str, dict[str, str]] = field(default_factory=dict)
+    subcommand_option_examples: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 class ClickerHelper:
@@ -32,7 +37,18 @@ class ClickerHelper:
     def _as_options(options):
         return tuple(str(option) for option in (options or ()) if option)
 
-    def add_command(self, name, description='', options=None, subcommands=None, usage=''):
+    def add_command(
+            self,
+            name,
+            description='',
+            options=None,
+            subcommands=None,
+            usage='',
+            option_descriptions=None,
+            option_examples=None,
+            subcommand_descriptions=None,
+            subcommand_option_descriptions=None,
+            subcommand_option_examples=None):
         name = self._command_name(name)
         normalized_subcommands = {}
         for subcommand, sub_options in (subcommands or {}).items():
@@ -44,6 +60,11 @@ class ClickerHelper:
             usage=usage,
             options=self._as_options(options),
             subcommands=normalized_subcommands,
+            option_descriptions=option_descriptions or {},
+            option_examples=option_examples or {},
+            subcommand_descriptions=subcommand_descriptions or {},
+            subcommand_option_descriptions=subcommand_option_descriptions or {},
+            subcommand_option_examples=subcommand_option_examples or {},
         )
         return self.commands[name]
 
@@ -84,21 +105,50 @@ class ClickerHelper:
         return spec.name
 
     def format_help(self, command=None):
-        command = command.strip().split()[0] if command and command.strip() else None
-        if command:
-            command = self._command_name(command)
-            spec = self.commands.get(command)
+        command_tokens = command.strip().split() if command and command.strip() else []
+        command_name = self._command_name(command_tokens[0]) if command_tokens else None
+        if command_name:
+            spec = self.commands.get(command_name)
             if spec is None:
-                return f"Unknown command: {command}"
+                return f"Unknown command: {command_name}"
 
+            subcommand = command_tokens[1] if len(command_tokens) > 1 else None
             lines = [f"{spec.name} - {spec.description}", f"Usage: {self._format_usage(spec)}"]
             if spec.options:
-                lines.append('Options: ' + ', '.join(spec.options))
+                lines.append('Options:')
+                for option in spec.options:
+                    description = spec.option_descriptions.get(option, '')
+                    example = spec.option_examples.get(option)
+                    suffix = f' - {description}' if description else ''
+                    if example:
+                        suffix += f' (example: {example})'
+                    lines.append(f'  {option}{suffix}')
             if spec.subcommands:
+                if subcommand and subcommand in spec.subcommands:
+                    options = spec.subcommands[subcommand]
+                    description = spec.subcommand_descriptions.get(subcommand, '')
+                    if description:
+                        lines.append(f'Subcommand: {subcommand} - {description}')
+                    if options:
+                        lines.append('Parameters:')
+                        descriptions = spec.subcommand_option_descriptions.get(subcommand, {})
+                        examples = spec.subcommand_option_examples.get(subcommand, {})
+                        for option in options:
+                            option_description = descriptions.get(option, '')
+                            example = examples.get(option)
+                            suffix = f' - {option_description}' if option_description else ''
+                            if example:
+                                suffix += f' (example: {example})'
+                            lines.append(f'  {option}{suffix}')
+                    return '\n'.join(lines)
+
                 lines.append('Subcommands:')
-                for subcommand, options in spec.subcommands.items():
+                for subcommand_name, options in spec.subcommands.items():
                     suffix = f" [{', '.join(options)}]" if options else ''
-                    lines.append(f"  {subcommand}{suffix}")
+                    description = spec.subcommand_descriptions.get(subcommand_name, '')
+                    if description:
+                        suffix += f' - {description}'
+                    lines.append(f"  {subcommand_name}{suffix}")
             return '\n'.join(lines)
 
         lines = [self.description, '', 'Commands:']

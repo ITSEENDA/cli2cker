@@ -1,8 +1,11 @@
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
+from app import AfkClicker
 from backends.base import InputBackend, WindowRef
 from completer import CommandCompleter
 from models import ClickerSettings, TaskState
@@ -66,17 +69,128 @@ class CoreTests(unittest.TestCase):
             manager.close()
 
     def test_completer_handles_subcommands_and_trailing_space(self):
-        completer = CommandCompleter({'!path': {'save': ['-n', '-p']}})
+        completer = CommandCompleter({'!profile': {'create': ['-n', '-p']}})
         completions = [
             item.text
-            for item in completer.get_completions(Document('!path s'), None)
+            for item in completer.get_completions(Document('!profile'), None)
         ]
-        self.assertEqual(completions, ['save'])
+        self.assertEqual(completions, ['create'])
         completions = [
             item.text
-            for item in completer.get_completions(Document('!path save '), None)
+            for item in completer.get_completions(Document('!profile c'), None)
+        ]
+        self.assertEqual(completions, ['create'])
+        completions = [
+            item.text
+            for item in completer.get_completions(Document('!profile create '), None)
         ]
         self.assertEqual(completions, ['-n', '-p'])
+
+    def test_shell_context_resolves_relative_profile_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            shell_dir = root / 'games'
+            shell_dir.mkdir()
+            executable = shell_dir / 'game.exe'
+            executable.write_text('', encoding='utf-8')
+            app = AfkClicker(
+                storage=JsonStorage(root / 'data'),
+                backend=FakeBackend(),
+            )
+            try:
+                original_cwd = Path.cwd()
+                app.working_dir = root
+                app.router.dispatch('!cd games')
+                self.assertEqual(Path.cwd(), original_cwd)
+                app.router.dispatch('!profile create game --path game.exe')
+                self.assertEqual(app.targets.show('game'), str(executable.resolve()))
+                output = StringIO()
+                with redirect_stdout(output):
+                    app.router.dispatch('!pwd')
+                    app.router.dispatch('!ls')
+                self.assertIn(str(shell_dir.resolve()), output.getvalue())
+                self.assertIn('game.exe', output.getvalue())
+            finally:
+                app.close()
+
+    def test_task_commands_are_grouped_with_legacy_alias_support(self):
+        app = AfkClicker(storage=JsonStorage(Path(tempfile.mkdtemp()) / 'data'), backend=FakeBackend())
+        try:
+            self.assertIn('!task', app.router.handlers)
+            self.assertNotIn('!set', app.router.handlers)
+            self.assertNotIn('!status', app.router.handlers)
+            self.assertEqual(app.router.dispatch('!set 123 -d 1'), 'Command error: No active task for PID 123')
+        finally:
+            app.close()
+
+    def test_task_config_accepts_readable_parameter_values(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            executable = root / 'game.exe'
+            executable.write_text('', encoding='utf-8')
+            app = AfkClicker(
+                storage=JsonStorage(root / 'data'),
+                backend=FakeBackend(),
+            )
+            try:
+                app.working_dir = root
+                app.router.dispatch('!profile create game --path game.exe')
+                app.router.dispatch('!task start game')
+                app.router.dispatch(
+                    '!task config game --mode right-left --delay 0.5 '
+                    '--key space --safety strict'
+                )
+                task = app.tasks.status()[0]
+                self.assertEqual(task.settings.click_mode, 4)
+                self.assertEqual(task.settings.delay, 0.5)
+                self.assertEqual(task.settings.key, 'space')
+                self.assertTrue(task.settings.safety)
+            finally:
+                app.close()
+
+    def test_help_includes_subcommand_and_parameter_descriptions(self):
+        app = AfkClicker(
+            storage=JsonStorage(Path(tempfile.mkdtemp()) / 'data'),
+            backend=FakeBackend(),
+        )
+        try:
+            task_help = app.helper.format_help('!task')
+            config_help = app.helper.format_help('!task config')
+            self.assertIn('Start a task for a profile or PID.', task_help)
+            self.assertIn('--mode - off, left, right, left-right, or right-left.', config_help)
+            self.assertIn('(example: right-left)', config_help)
+            self.assertIn('--safety - strict or off.', config_help)
+        finally:
+            app.close()
+
+    def test_completer_suggests_option_values(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            executable = root / 'game.exe'
+            executable.write_text('', encoding='utf-8')
+            app = AfkClicker(
+                storage=JsonStorage(root / 'data'),
+                backend=FakeBackend(),
+            )
+            try:
+                app.working_dir = root
+                app.router.dispatch('!profile create mc --path game.exe')
+                profile_values = [
+                    item.text
+                    for item in app.completer.get_completions(
+                        Document('!task start --profile '), None
+                    )
+                ]
+                mode_values = [
+                    item.text
+                    for item in app.completer.get_completions(
+                        Document('!task config mc --mode r'), None
+                    )
+                ]
+                self.assertIn('mc', profile_values)
+                self.assertEqual(mode_values, ['right', 'right-left'])
+            finally:
+                app.close()
 
 
 if __name__ == '__main__':

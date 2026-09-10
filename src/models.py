@@ -53,6 +53,16 @@ class TaskState(str, Enum):
     FAILED = 'failed'
 
 
+def click_mode_name(mode):
+    return {
+        0: 'off',
+        1: 'left',
+        2: 'right',
+        3: 'left-right',
+        4: 'right-left',
+    }.get(mode, str(mode))
+
+
 @dataclass
 class ClickerTask:
     pid: int

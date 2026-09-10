@@ -6,7 +6,7 @@ from commands import CommandRouter
 from completer import CommandCompleter
 from helper import ClickerHelper
 from hotkeys import HotkeyManager
-from models import ClickerSettings, TaskState
+from models import ClickerSettings, click_mode_name
 from storage import JsonStorage
 from targets import TargetRegistry
 from task_manager import TaskManager
@@ -24,6 +24,7 @@ class AfkClicker:
         self.backend = backend or create_backend()
         self.targets = TargetRegistry(self.storage, self.backend)
         self.tasks = TaskManager(self.backend, self.defaults, base_thread_num)
+        self.working_dir = Path.cwd()
         self.debug_mode = False
         self.closed = False
 
@@ -43,71 +44,163 @@ class AfkClicker:
 
     def _register_commands(self):
         self.router.register(
-            '!start', self._cmd_start,
-            'Start a clicker task.',
-            options=['-p', '-n'],
-            usage='!start -p <pid> | !start -n <target>',
-        )
-        self.router.register(
-            '!stop', self._cmd_stop,
-            'Stop a task or all tasks.',
-            options=['-p', '-n', 'all'],
-            usage='!stop -p <pid> | !stop -n <target> | !stop all',
-        )
-        self.router.register(
-            '!toggle', self._cmd_toggle,
-            'Pause or resume a task.',
-            options=['-p', '-n'],
-            usage='!toggle -p <pid> | !toggle -n <target>',
-        )
-        self.router.register(
-            '!set', self._cmd_set,
-            'Change settings for a running task.',
-            options=['-m', '-k', '-d', '-s', 'default'],
-            usage='!set <pid|target> [-m mode] [-k key] [-d seconds] [-s true|false]',
+            '!task', self._cmd_task,
+            'Manage running clicker tasks.',
+            subcommands={
+                'start': ['--pid', '--profile'],
+                'pause': ['--pid', '--profile'],
+                'resume': ['--pid', '--profile'],
+                'toggle': ['--pid', '--profile'],
+                'config': ['--mode', '--delay', '--key', '--safety'],
+                'reset': [],
+                'stop': ['--pid', '--profile', 'all'],
+                'status': [],
+                'list': [],
+            },
+            usage='!task <start|pause|resume|toggle|config|reset|stop|status> ...',
+            subcommand_descriptions={
+                'start': 'Start a task for a profile or PID.',
+                'pause': 'Pause a running task without removing it.',
+                'resume': 'Resume a paused task.',
+                'toggle': 'Toggle between running and paused.',
+                'config': 'Change runtime parameters of a task.',
+                'reset': 'Restore the task default parameters.',
+                'stop': 'Stop and remove a task.',
+                'status': 'Show all active tasks.',
+                'list': 'Alias for status.',
+            },
+            subcommand_option_descriptions={
+                'start': {
+                    '--pid': 'Use a process ID instead of a profile.',
+                    '--profile': 'Use a saved profile name.',
+                },
+                'pause': {
+                    '--pid': 'Process ID of the task.',
+                    '--profile': 'Profile name of the task.',
+                },
+                'resume': {
+                    '--pid': 'Process ID of the task.',
+                    '--profile': 'Profile name of the task.',
+                },
+                'toggle': {
+                    '--pid': 'Process ID of the task.',
+                    '--profile': 'Profile name of the task.',
+                },
+                'config': {
+                    '--mode': 'off, left, right, left-right, or right-left.',
+                    '--delay': 'Seconds between triggers.',
+                    '--key': 'Key sent to the target, or none.',
+                    '--safety': 'strict or off.',
+                },
+                'stop': {
+                    '--pid': 'Process ID of the task.',
+                    '--profile': 'Profile name of the task.',
+                    'all': 'Stop every active task.',
+                },
+            },
+            subcommand_option_examples={
+                'start': {'--pid': '36140', '--profile': 'mc'},
+                'pause': {'--pid': '36140', '--profile': 'mc'},
+                'resume': {'--pid': '36140', '--profile': 'mc'},
+                'toggle': {'--pid': '36140', '--profile': 'mc'},
+                'config': {
+                    '--mode': 'right-left',
+                    '--delay': '0.5',
+                    '--key': 'space',
+                    '--safety': 'strict',
+                },
+                'stop': {'--pid': '36140', '--profile': 'mc'},
+            },
         )
         self.router.register(
             '!profile', self._cmd_profile,
             'Create and manage target profiles.',
             subcommands={
-                'create': ['-n', '-p', '--name', '--path'],
+                'create': ['--path'],
                 'list': [],
-                'show': ['-n', '--name'],
-                'delete': ['-n', '--name'],
+                'show': [],
+                'edit': ['--path'],
+                'delete': [],
             },
-            usage='!profile <create|list|show|delete> ...',
+            usage='!profile <create|list|show|edit|delete> ...',
+            subcommand_descriptions={
+                'create': 'Create a saved executable profile.',
+                'list': 'List saved profiles.',
+                'show': 'Show one profile.',
+                'edit': 'Change a profile executable path.',
+                'delete': 'Delete a profile.',
+            },
+            subcommand_option_descriptions={
+                'create': {'--path': 'Executable path; relative paths use !cd context.'},
+                'edit': {'--path': 'New executable path.'},
+            },
+            subcommand_option_examples={
+                'create': {'--path': '.\\Minecraft\\javaw.exe'},
+                'edit': {'--path': '.\\Minecraft\\javaw-new.exe'},
+            },
         )
         self.router.register(
-            '!status', self._cmd_status,
-            'Show all active tasks.',
+            '!cd', self._cmd_cd,
+            'Change the shell working directory.',
+            usage='!cd [path]',
         )
+        self.router.register('!pwd', self._cmd_pwd, 'Show the shell working directory.')
         self.router.register(
-            '!path', self._cmd_path,
-            'Manage saved target paths.',
-            subcommands={
-                'save': ['-n', '-p'],
-                'del': ['-n'],
-                'def': ['mc'],
-                'list': [],
-            },
-            usage='!path <save|del|list> ...',
+            '!ls', self._cmd_ls,
+            'List files in the shell working directory.',
+            options=['-a'],
+            usage='!ls [-a] [path]',
+            option_descriptions={'-a': 'Include hidden entries.'},
+            option_examples={'-a': '!ls -a'},
         )
         self.router.register(
             '!hotkey', self._cmd_hotkey,
             'Manage global hotkeys.',
             subcommands={
                 'list': [],
-                'save': ['-n', '-a'],
-                'mod': ['-a', 'rb'],
-                'del': ['-n'],
+                'create': ['--keys', '--action'],
+                'edit': ['--keys', '--action', 'rb'],
+                'delete': [],
             },
-            usage='!hotkey <list|save|mod|del> ...',
+            usage='!hotkey <list|create|edit|delete> ...',
+            subcommand_descriptions={
+                'list': 'List saved hotkeys.',
+                'create': 'Create a hotkey binding.',
+                'edit': 'Change a hotkey binding.',
+                'delete': 'Delete a hotkey binding.',
+            },
+            subcommand_option_descriptions={
+                'create': {
+                    '--keys': 'Key combination such as alt+`.',
+                    '--action': 'Command to dispatch when triggered.',
+                },
+                'edit': {
+                    '--keys': 'New key combination.',
+                    '--action': 'New command action.',
+                    'rb': 'Capture a new combination interactively.',
+                },
+            },
+            subcommand_option_examples={
+                'create': {
+                    '--keys': 'alt+`',
+                    '--action': '"!task toggle mc"',
+                },
+                'edit': {
+                    '--keys': 'shift+tab',
+                    '--action': '"!task pause mc"',
+                },
+            },
         )
         self.router.register(
             '!debug', self._cmd_debug,
             'Enable, disable, or toggle debug output.',
             options=['true', 'false'],
             usage='!debug [true|false]',
+            option_descriptions={
+                'true': 'Enable debug output.',
+                'false': 'Disable debug output.',
+            },
+            option_examples={'true': '!debug true', 'false': '!debug false'},
         )
         self.router.register('!clear', lambda _: clear_terminal(), 'Clear the terminal.')
         self.router.register('!help', self._cmd_help, 'Show command help.', usage='!help [command]')
@@ -116,10 +209,22 @@ class AfkClicker:
 
     def _refresh_profile_completions(self):
         profiles = list(self.targets.list())
-        for command in ('!start', '!stop', '!toggle', '!set'):
-            self.completer.update_candidates(command, profiles)
-        for subcommand in ('show', 'delete'):
+        task_subcommands = ('start', 'pause', 'resume', 'toggle', 'config', 'reset', 'stop')
+        for subcommand in task_subcommands:
+            self.completer.update_subcommand_candidates('!task', subcommand, profiles)
+            self.completer.update_value_candidates('!task', subcommand, '--profile', profiles)
+        for subcommand in ('show', 'edit', 'delete'):
             self.completer.update_subcommand_candidates('!profile', subcommand, profiles)
+        self.completer.update_value_candidates(
+            '!task', 'config', '--mode',
+            ['off', 'left', 'right', 'left-right', 'right-left'],
+        )
+        self.completer.update_value_candidates(
+            '!task', 'config', '--safety', ['strict', 'off']
+        )
+        self.completer.update_value_candidates(
+            '!task', 'config', '--key', ['none', 'space', 'enter', 'tab']
+        )
 
     def _handle_hotkey_action(self, action):
         result = self.router.dispatch(action)
@@ -128,24 +233,43 @@ class AfkClicker:
 
     @staticmethod
     def _parse_options(args):
+        aliases = {
+            '-p': '--pid',
+            '-n': '--profile',
+            '--name': '--profile',
+            '--path': '--path',
+            '-m': '--mode',
+            '-k': '--key',
+            '-d': '--delay',
+            '-s': '--safety',
+            '-a': '--action',
+            '--mouse': '--mode',
+            '--keyboard': '--key',
+        }
         values = {}
         index = 0
         while index < len(args):
             option = args[index]
-            if not option.startswith('-') or index + 1 >= len(args):
+            if not option.startswith('-'):
                 raise ValueError(f'Missing value for option {option}')
-            values[option] = args[index + 1]
-            index += 2
+            if '=' in option:
+                option, value = option.split('=', 1)
+            else:
+                if index + 1 >= len(args):
+                    raise ValueError(f'Missing value for option {option}')
+                value = args[index + 1]
+            values[aliases.get(option, option)] = value
+            index += 1 if '=' in option else 2
         return values
 
     def _resolve_target(self, args):
         if not args:
             raise ValueError('Target is required: use -p <pid> or -n <name>')
-        if args[0] == '-p':
+        if args[0] in {'-p', '--pid'}:
             if len(args) < 2:
                 raise ValueError('Missing PID after -p')
             return int(args[1]), None, 2
-        if args[0] == '-n':
+        if args[0] in {'-n', '--profile', '--name'}:
             if len(args) < 2:
                 raise ValueError('Missing target name after -n')
             name = args[1]
@@ -177,6 +301,18 @@ class AfkClicker:
         target = profile or f'PID {task.pid}'
         print(f'{GREEN}[STARTED] {target} ({self.backend.name}){RESET}')
 
+    def _cmd_pause(self, args):
+        pid, profile, _ = self._resolve_target(args)
+        task = self.tasks.pause(pid)
+        target = profile or f'PID {task.pid}'
+        print(f'{YELLOW}[PAUSED] {target} (PID {task.pid}){RESET}')
+
+    def _cmd_resume(self, args):
+        pid, profile, _ = self._resolve_target(args)
+        task = self.tasks.resume(pid)
+        target = profile or f'PID {task.pid}'
+        print(f'{GREEN}[RESUMED] {target} (PID {task.pid}){RESET}')
+
     def _cmd_stop(self, args):
         if args == ['all']:
             self.tasks.stop_all()
@@ -193,28 +329,85 @@ class AfkClicker:
         target = profile or f'PID {task.pid}'
         print(f'{GREEN}[{task.state.value.upper()}] {target} (PID {task.pid}){RESET}')
 
-    def _cmd_set(self, args):
+    def _cmd_task(self, args):
+        if not args:
+            self.helper.print_help('!task')
+            return
+        handlers = {
+            'start': self._cmd_start,
+            'pause': self._cmd_pause,
+            'resume': self._cmd_resume,
+            'toggle': self._cmd_toggle,
+            'config': self._cmd_config,
+            'reset': self._cmd_reset,
+            'stop': self._cmd_stop,
+            'status': self._cmd_status,
+            'list': self._cmd_status,
+        }
+        action = args[0]
+        handler = handlers.get(action)
+        if handler is None:
+            raise ValueError(f'Unknown task action: {action}')
+        return handler(args[1:])
+
+    def _cmd_reset(self, args):
+        pid, _, _ = self._resolve_target(args)
+        task = self.tasks.reset_settings(pid, self.defaults)
+        print(f'{GREEN}[RESET] PID {task.pid}{RESET}')
+
+    @staticmethod
+    def _parse_mode(value):
+        modes = {
+            'off': 0,
+            'none': 0,
+            'left': 1,
+            'right': 2,
+            'left-right': 3,
+            'right-left': 4,
+        }
+        normalized = str(value).lower()
+        if normalized in modes:
+            return modes[normalized]
+        mode = int(value)
+        if mode not in range(5):
+            raise ValueError('Mode must be off, left, right, left-right, or right-left')
+        return mode
+
+    @staticmethod
+    def _parse_safety(value):
+        normalized = str(value).lower()
+        if normalized in {'strict', 'on', 'true'}:
+            return True
+        if normalized in {'off', 'none', 'false'}:
+            return False
+        raise ValueError('Safety must be strict or off')
+
+    def _cmd_config(self, args):
         pid, _, consumed = self._resolve_target(args)
         values = args[consumed:]
         task = self.tasks.tasks.get(pid)
         if task is None:
             raise RuntimeError(f'No active task for PID {pid}')
         if values == ['default']:
-            task.settings = self.defaults.copy()
+            self.tasks.reset_settings(pid, self.defaults)
+            print(f'{GREEN}[RESET] PID {pid}{RESET}')
             return
         options = self._parse_options(values)
         updates = {}
-        if '-m' in options:
-            updates['click_mode'] = int(options['-m'])
-        if '-k' in options:
-            updates['key'] = options['-k']
-        if '-d' in options:
-            delay = float(options['-d'])
-            if task.settings.safety and delay < self.defaults.delay:
+        effective_safety = task.settings.safety
+        if '--safety' in options:
+            effective_safety = self._parse_safety(options['--safety'])
+            updates['safety'] = effective_safety
+        if '--mode' in options:
+            updates['click_mode'] = self._parse_mode(options['--mode'])
+        if '--key' in options:
+            key = options['--key']
+            updates['key'] = 0 if key.lower() in {'none', 'off'} else key
+        if '--delay' in options:
+            delay = float(options['--delay'])
+            if effective_safety and delay < self.defaults.delay:
                 raise ValueError(f'Delay must be at least {self.defaults.delay} seconds')
             updates['delay'] = delay
-        if '-s' in options:
-            updates['safety'] = str_to_bool(options['-s'])
         self.tasks.update_settings(pid, **updates)
         print(f'{GREEN}[UPDATED] PID {pid}{RESET}')
 
@@ -229,15 +422,60 @@ class AfkClicker:
                 task.pid,
                 task.state.value,
                 task.settings.delay,
-                task.settings.click_mode,
+                click_mode_name(task.settings.click_mode),
             ]
             for task in tasks
         ]
         print(self.helper.format_table(['PROFILE', 'PID', 'STATE', 'DELAY', 'MODE'], rows))
 
+    def _resolve_shell_path(self, raw_path):
+        path = Path(os.path.expandvars(os.path.expanduser(raw_path)))
+        if not path.is_absolute():
+            path = self.working_dir / path
+        return path.resolve()
+
+    def _cmd_cd(self, args):
+        if len(args) > 1:
+            raise ValueError('Usage: !cd [path]')
+        target = self._resolve_shell_path(args[0] if args else str(Path.home()))
+        if not target.is_dir():
+            raise FileNotFoundError(f'Not a directory: {target}')
+        self.working_dir = target
+        print(f'{GREEN}{self.working_dir}{RESET}')
+
+    def _cmd_pwd(self, _):
+        print(self.working_dir)
+
+    def _cmd_ls(self, args):
+        show_hidden = False
+        path_args = []
+        for arg in args:
+            if arg == '-a':
+                show_hidden = True
+            else:
+                path_args.append(arg)
+        if len(path_args) > 1:
+            raise ValueError('Usage: !ls [-a] [path]')
+
+        target = self._resolve_shell_path(path_args[0] if path_args else '.')
+        if not target.exists():
+            raise FileNotFoundError(f'Path does not exist: {target}')
+        if target.is_file():
+            print(target.name)
+            return
+
+        rows = []
+        for item in sorted(target.iterdir(), key=lambda entry: (entry.is_file(), entry.name.lower())):
+            if not show_hidden and item.name.startswith('.'):
+                continue
+            kind = 'DIR' if item.is_dir() else 'FILE'
+            rows.append([kind, item.name])
+        if rows:
+            print(self.helper.format_table(['TYPE', 'NAME'], rows))
+
     def _cmd_profile(self, args):
         if not args:
-            raise ValueError('Use !profile create, list, show, or delete')
+            raise ValueError('Use !profile create, list, show, edit, or delete')
         action = args[0]
         if action == 'list':
             rows = [[name, path] for name, path in self.targets.list().items()]
@@ -247,23 +485,24 @@ class AfkClicker:
                 print('No profiles saved.')
             return
 
-        if action == 'create':
+        if action in {'create', 'edit'}:
             profile_args = list(args[1:])
             name = profile_args.pop(0) if profile_args and not profile_args[0].startswith('-') else None
             options = self._parse_options(profile_args)
-            name = name or options.get('-n') or options.get('--name')
-            path = options.get('-p') or options.get('--path')
+            name = name or options.get('--profile')
+            path = options.get('--path')
             if not name or not path:
-                raise ValueError('Use !profile create -n <name> -p <path>')
-            resolved = self.targets.save(name, path)
+                raise ValueError(f'Use !profile {action} <name> --path <path>')
+            resolved = self.targets.save(name, path, base_dir=self.working_dir)
             self._refresh_profile_completions()
-            print(f'{GREEN}[PROFILE CREATED] {name} -> {resolved}{RESET}')
+            label = 'CREATED' if action == 'create' else 'UPDATED'
+            print(f'{GREEN}[PROFILE {label}] {name} -> {resolved}{RESET}')
             return
 
         profile_args = list(args[1:])
         name = profile_args.pop(0) if profile_args and not profile_args[0].startswith('-') else None
         options = self._parse_options(profile_args)
-        name = name or options.get('-n') or options.get('--name')
+        name = name or options.get('--profile')
         if not name:
             raise ValueError('Missing profile name')
         if action == 'show':
@@ -275,47 +514,9 @@ class AfkClicker:
         else:
             raise ValueError(f'Unknown profile action: {action}')
 
-    def _cmd_path(self, args):
-        if not args:
-            raise ValueError('Use !path save, !path del, or !path list')
-        action = args[0]
-        if action == 'list':
-            rows = [[name, path] for name, path in self.targets.list().items()]
-            if rows:
-                print(self.helper.format_table(['NAME', 'PATH'], rows))
-            return
-        if action == 'def':
-            if len(args) < 2 or args[1] != 'mc':
-                raise ValueError('Supported built-in target: mc')
-            appdata = os.environ.get('APPDATA')
-            if not appdata:
-                raise RuntimeError('APPDATA is not available on this operating system')
-            path = Path(appdata) / '.minecraft' / 'runtime' / 'java-runtime-gamma' / 'windows' / 'java-runtime-gamma' / 'bin' / 'javaw.exe'
-            self.targets.save('mc', str(path), validate=False)
-            self._refresh_profile_completions()
-            print(f'{GREEN}[SAVED] mc -> {path}{RESET}')
-            return
-        options = self._parse_options(args[1:])
-        name = options.get('-n')
-        if not name:
-            raise ValueError('Missing -n <name>')
-        if action == 'save':
-            raw_path = options.get('-p')
-            if not raw_path:
-                raise ValueError('Missing -p <path>')
-            path = self.targets.save(name, raw_path)
-            self._refresh_profile_completions()
-            print(f'{GREEN}[SAVED] {name} -> {path}{RESET}')
-        elif action == 'del':
-            if self.targets.delete(name):
-                self._refresh_profile_completions()
-                print(f'{GREEN}[DELETED] {name}{RESET}')
-        else:
-            raise ValueError(f'Unknown path action: {action}')
-
     def _cmd_hotkey(self, args):
         if not args:
-            raise ValueError('Use !hotkey list, save, mod, or del')
+            raise ValueError('Use !hotkey list, create, edit, or delete')
         action = args[0]
         if action == 'list':
             rows = [
@@ -325,34 +526,55 @@ class AfkClicker:
             if rows:
                 print(self.helper.format_table(['NAME', 'KEYS', 'ACTION'], rows))
             return
-        if action == 'save':
-            options = self._parse_options(args[1:])
-            name = options.get('-n')
-            command = options.get('-a')
+        if action in {'save', 'create'}:
+            hotkey_args = list(args[1:])
+            name = hotkey_args.pop(0) if hotkey_args and not hotkey_args[0].startswith('-') else None
+            options = self._parse_options(hotkey_args)
+            name = name or options.get('--profile') or options.get('--name')
+            command = options.get('--action')
             if not name or not command:
-                raise ValueError('Use !hotkey save -n <name> -a <command>')
-            keys = self.hotkeys.capture_binding(name, command)
+                raise ValueError('Use !hotkey create <name> --action "<command>"')
+            keys = self._parse_hotkey_keys(options['--keys']) if '--keys' in options else None
+            if keys:
+                self.hotkeys.save_binding(name, keys, command)
+            else:
+                keys = self.hotkeys.capture_binding(name, command)
             print(f"{GREEN}[SAVED] {'+'.join(sorted(keys))}{RESET}")
             return
-        if action == 'mod':
-            if len(args) < 2:
+        if action in {'mod', 'edit'}:
+            hotkey_args = list(args[1:])
+            name = hotkey_args.pop(0) if hotkey_args and not hotkey_args[0].startswith('-') else None
+            options = self._parse_options(hotkey_args) if hotkey_args and hotkey_args[0] != 'rb' else {}
+            name = name or options.get('--profile') or options.get('--name')
+            if not name or name not in self.hotkeys.bindings:
                 raise ValueError('Missing hotkey name')
-            name = args[1]
-            options = args[2:]
-            if options and options[0] == 'rb':
+            if 'rb' in hotkey_args:
                 command = self.hotkeys.bindings[name]['action']
                 keys = self.hotkeys.capture_binding(name, command)
                 print(f"{GREEN}[UPDATED] {'+'.join(sorted(keys))}{RESET}")
             else:
-                values = self._parse_options(options)
-                self.hotkeys.update_action(name, values['-a'])
+                command = options.get('--action', self.hotkeys.bindings[name]['action'])
+                keys = self._parse_hotkey_keys(options['--keys']) if '--keys' in options else self.hotkeys.bindings[name]['keys']
+                self.hotkeys.save_binding(name, keys, command)
+                print(f'{GREEN}[UPDATED] {name}{RESET}')
             return
-        if action == 'del':
-            options = self._parse_options(args[1:])
-            if self.hotkeys.delete_binding(options['-n']):
-                print(f'{GREEN}[DELETED] {options["-n"]}{RESET}')
+        if action in {'del', 'delete'}:
+            hotkey_args = list(args[1:])
+            name = hotkey_args.pop(0) if hotkey_args and not hotkey_args[0].startswith('-') else None
+            options = self._parse_options(hotkey_args)
+            name = name or options.get('--profile') or options.get('--name')
+            if not name:
+                raise ValueError('Missing hotkey name')
+            if self.hotkeys.delete_binding(name):
+                print(f'{GREEN}[DELETED] {name}{RESET}')
             return
         raise ValueError(f'Unknown hotkey action: {action}')
+
+    @staticmethod
+    def _parse_hotkey_keys(raw_keys):
+        aliases = {'control': 'ctrl', 'option': 'alt'}
+        keys = [part.strip().lower() for part in raw_keys.split('+') if part.strip()]
+        return [aliases.get(key, key) for key in keys]
 
     def _cmd_debug(self, args):
         if args:
@@ -362,7 +584,7 @@ class AfkClicker:
         print(f'Debug: {self.debug_mode}')
 
     def _cmd_help(self, args):
-        self.helper.print_help(args[0] if args else None)
+        self.helper.print_help(' '.join(args) if args else None)
 
     def run(self):
         self.hotkeys.start()

@@ -85,6 +85,12 @@ class WindowsBackend(InputBackend):
     def press_key(self, window: WindowRef, key: int | str):
         child_hwnd = win32gui.GetWindow(window.native_id, win32con.GW_CHILD)
         if isinstance(key, str):
+            key = {
+                'space': ' ',
+                'enter': '\r',
+                'tab': '\t',
+                'backspace': '\b',
+            }.get(key.lower(), key)
             if len(key) != 1:
                 raise ValueError(f'Windows backend expects one character, got {key!r}')
             key = ord(key)
