@@ -1,4 +1,4 @@
-pypiwin32>=223
-pywin32>=310
 pynput>=1.8.1
 prompt_toolkit>=3.0.51
+pywin32>=310; sys_platform == "win32"
+python-xlib>=0.33; sys_platform == "linux"

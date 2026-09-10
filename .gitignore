@@ -1,2 +1,11 @@
 /src/saved_path.txt
 TODO.txt
+.idea/
+__pycache__/
+*.pyc
+venv/
+.venv/
+build/
+dist/
+*.egg-info/
+src/data/

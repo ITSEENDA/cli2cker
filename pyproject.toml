@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "afkclicker"
+version = "0.1.0"
+description = "Cross-platform process clicker with configurable hotkeys"
+requires-python = ">=3.10"
+dependencies = [
+    "pynput>=1.8.1",
+    "prompt_toolkit>=3.0.51",
+]
+
+[project.optional-dependencies]
+windows = ["pywin32>=310"]
+linux = ["python-xlib>=0.33"]
+build = ["pyinstaller>=6"]
+
+[project.scripts]
+afkclicker = "main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = [
+    "main",
+    "afkclicker",
+    "app",
+    "commands",
+    "completer",
+    "helper",
+    "hotkeys",
+    "models",
+    "storage",
+    "targets",
+    "task_manager",
+    "utils",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["backends*"]

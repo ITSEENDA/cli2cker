@@ -24,6 +24,10 @@ class ClickerHelper:
     def _command_name(name):
         return name if name.startswith('!') else f'!{name}'
 
+    @classmethod
+    def command_name(cls, name):
+        return cls._command_name(name)
+
     @staticmethod
     def _as_options(options):
         return tuple(str(option) for option in (options or ()) if option)
