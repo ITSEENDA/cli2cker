@@ -1,13 +1,19 @@
+import os
+
 from prompt_toolkit.completion import Completer, Completion
 
 
 class CommandCompleter(Completer):
     """Complete command names, subcommands, and option names."""
 
-    def __init__(self, commands=None):
+    def __init__(self, commands=None, path_provider=None):
         self.commands = commands or {}
         self.value_candidates = {}
         self.argument_candidates = {}
+        self.path_provider = path_provider
+
+    def set_path_provider(self, path_provider):
+        self.path_provider = path_provider
 
     def update_commands(self, commands):
         self.commands = commands or {}
@@ -46,10 +52,42 @@ class CommandCompleter(Completer):
         candidates = self.value_candidates.get((command, subcommand, option), ())
         yield from self._yield_candidates(candidates, prefix, set())
 
+    def _yield_path_candidates(self, prefix, directories_only=False):
+        if self.path_provider is None:
+            return
+        for candidate in self.path_provider(prefix, directories_only):
+            yield Completion(candidate, start_position=-len(prefix))
+
+    @staticmethod
+    def _path_context(tokens, trailing_space):
+        if not tokens:
+            return None
+        command = tokens[0]
+        if command in {'!cd', '!ls'}:
+            if len(tokens) == 1 and not trailing_space:
+                return None
+            if command == '!ls' and tokens[-1] == '-a' and not trailing_space:
+                return None
+            return '' if trailing_space else tokens[-1], command == '!cd'
+        if command == '!profile' and len(tokens) >= 2 and tokens[1] in {'create', 'edit'}:
+            for option in ('--path', '-p'):
+                if option in tokens:
+                    index = tokens.index(option)
+                    if len(tokens) > index + 1:
+                        return '' if trailing_space else tokens[-1], False
+                    return '', False
+        return None
+
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
         tokens = text.split()
         trailing_space = text.endswith((' ', '\t'))
+
+        path_context = self._path_context(tokens, trailing_space)
+        if path_context is not None:
+            path_prefix, directories_only = path_context
+            yield from self._yield_path_candidates(path_prefix, directories_only)
+            return
 
         if not tokens:
             yield from self._yield_candidates(self.commands.keys(), '', set())

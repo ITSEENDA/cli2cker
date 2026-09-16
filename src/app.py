@@ -43,7 +43,10 @@ class AfkClicker:
         )
         self.router = CommandRouter(self.helper)
         self._register_commands()
-        self.completer = CommandCompleter(self.helper.completion_map)
+        self.completer = CommandCompleter(
+            self.helper.completion_map,
+            path_provider=self._complete_paths,
+        )
         self._refresh_profile_completions()
         self.prompt_session = create_prompt_session(
             self.storage.history_path,
@@ -504,6 +507,39 @@ class AfkClicker:
         if not path.is_absolute():
             path = self.working_dir / path
         return path.resolve()
+
+    def _complete_paths(self, prefix, directories_only=False):
+        separator_index = max(prefix.rfind('/'), prefix.rfind('\\'))
+        has_separator = separator_index >= 0
+        ends_with_separator = prefix.endswith(('/', '\\'))
+        raw_directory = prefix if ends_with_separator else (
+            prefix[:separator_index + 1] if has_separator else '.'
+        )
+        partial = '' if ends_with_separator else (
+            prefix[separator_index + 1:] if has_separator else prefix
+        )
+        try:
+            directory = self._resolve_shell_path(raw_directory)
+            entries = directory.iterdir()
+        except (FileNotFoundError, NotADirectoryError, OSError):
+            return []
+
+        display_separator = '\\' if '\\' in prefix else os.sep
+        show_hidden = partial.startswith('.')
+        candidates = []
+        for entry in sorted(entries, key=lambda item: (not item.is_dir(), item.name.lower())):
+            if not show_hidden and entry.name.startswith('.'):
+                continue
+            if directories_only and not entry.is_dir():
+                continue
+            if partial and not entry.name.lower().startswith(partial.lower()):
+                continue
+            suffix = display_separator if entry.is_dir() else ''
+            if has_separator:
+                candidates.append(f'{prefix[:separator_index + 1]}{entry.name}{suffix}')
+            else:
+                candidates.append(f'{entry.name}{suffix}')
+        return candidates
 
     def _cmd_cd(self, args):
         if len(args) > 1:

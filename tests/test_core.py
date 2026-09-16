@@ -217,6 +217,35 @@ class CoreTests(unittest.TestCase):
         finally:
             app.close()
 
+    def test_path_completion_uses_shell_working_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            games = root / 'Games'
+            games.mkdir()
+            (games / 'game.exe').write_text('', encoding='utf-8')
+            app = AfkClicker(
+                storage=JsonStorage(root / 'data'),
+                backend=FakeBackend(),
+            )
+            try:
+                app.working_dir = root
+                cd_values = [
+                    item.text
+                    for item in app.completer.get_completions(
+                        Document('!cd G'), None
+                    )
+                ]
+                nested_values = [
+                    item.text
+                    for item in app.completer.get_completions(
+                        Document('!profile create game --path Games\\'), None
+                    )
+                ]
+                self.assertIn('Games\\', cd_values)
+                self.assertIn('Games\\game.exe', nested_values)
+            finally:
+                app.close()
+
 
 if __name__ == '__main__':
     unittest.main()
